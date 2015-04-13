@@ -16,13 +16,19 @@
       <form role="form" id="options-selection-form">
         <div class="state-input-group">
           <label for="textInput">Enter State Name</label>
-          <input list="states" id="stateTextInput" placeholder="Enter State..." />
-          <datalist id="states"></datalist>
+          <input list="statesList" type="text" id="stateTextInput" placeholder="Enter State..." />
+          <datalist id="statesList">
+            <select name="states" id="states">
+            </select>
+          </datalist>
         </div>
         <div class="industry-input-group">
           <label for="industry-input">Enter Industry</label>
-          <input list="industries" id="industryTextInput" placeholder="Enter Industry" />
-          <datalist id="industries"></datalist>
+          <input type="text" list="industries" id="industryTextInput" placeholder="Enter Industry" />
+          <datalist>
+            <select name="industries" id="industries">
+            </select>
+          </datalist>
         </div>
         <div class="occupation-input-group">
           <label for="occupation-input">Enter Occupation</label>
@@ -33,9 +39,54 @@
         <input type='submit'/>
       </form>
     </div>
-    <div class="row-fluid">
-      <ul id="results"></ul>
-    </div>
+    <table>
+      <thead>
+        <tr class="location-header">
+          <th></th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr class="compensation">
+          <td>Compensation</td>
+        </tr>
+        <tr class="wages-salary">
+          <td>Wages and Salaries</td>
+        </tr>
+        <tr class="education">
+          <td>Educational Attainment</td>
+        </tr>
+        <tr class="employment">
+          <td>Employment</td>
+        </tr>
+        <tr class="wages">
+          <td>Wages</td>
+        </tr>
+        <tr class="raw-material">
+          <td>Raw material</td>
+        </tr>
+        <tr class="intermediate-material">
+          <td>Intermediate materials</td>
+        </tr>
+        <tr class="final-material">
+          <td>Final materials</td>
+        </tr>
+        <tr class="natural-gas">
+          <td>Natural gas prices</td>
+        </tr>
+        <tr class="electricity">
+          <td>Electricity prices</td>
+        </tr>
+        <tr class="oil">
+          <td>Oil Prices</td>
+        </tr>
+        <tr class="highway-capital">
+          <td>Capital Outlay for highways</td>
+        </tr>
+        <tr class="highway-miles">
+          <td>Highway Miles by State</td>
+        </tr>
+      </tbody>
+    </table>
     <script src='//cdnjs.cloudflare.com/ajax/libs/rxjs/2.5.1/rx.lite.js'></script>
     <script src='/location-c.js'></script>
   </body>

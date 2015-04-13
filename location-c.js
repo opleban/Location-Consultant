@@ -191,7 +191,7 @@ INDUSTRIES = [
 ];
 
 var DATASET_LIBRARY = {
-  lookup_table: "v328-tzki",
+  lookup_table: "e49i-f9fh",
   wages_by_industry: "4ini-sjpi"
 };
 var SoQLQuery = (function(){
@@ -201,6 +201,8 @@ var SoQLQuery = (function(){
   function SoQLQuery(dataset_id){
     if (dataset_id){
       this.url = BASE_URL + dataset_id + '.json?';
+    } else {
+      throw "No dataset ID provided!";
     }
     //if a query is given, use it otherwise try and generate one
   };
@@ -222,17 +224,20 @@ var SoQLQuery = (function(){
       query.push('$order=' + _generateOrderStatement(options.order));
       //i.e. "compensation DESC"
     }
+    if (options.group){
+      query.push('$group=' + options.group);
+    }
     if (options.take){
       query.push('$limit=' + options.limit);
     }
     this.query = query.join('&');
-    console.log(this.query);
+    console.log("SoQL query set to: ", this.query);
   };
 
   //ALLOWS YOU TO SET QUERY DIRECTLY 
   SoQLQuery.prototype.setQuery = function(options){
     this.query = options.query;
-    console.log(this.query);
+    console.log("SoQL query set to: ", this.query);
   };
 
   //Returns promise observable
@@ -245,7 +250,7 @@ var SoQLQuery = (function(){
     return $.ajax({
       url: queryURL,
       dataType: 'json',
-    }).promise()
+    }).promise();
   };
 
   //TODO: REFACTOR TO ALLOW GREATER CUSTOMIZATION
@@ -293,79 +298,42 @@ var SoQLQuery = (function(){
       }
     }
 
-    function _searchDataset(){
-      
-    }
-    ////////////////////////////////////////////////////////////////////////////
-    // STATE SELECTION
-    ////////////////////////////////////////////////////////////////////////////
-
-      /* ** ** ** ** ** ** ** ** *
-      State Autocomplete Options
-      * * * ** ** ** ** ** ** ** */
-
-    // Input/Action
-    function _stateInputTextObservable(){
-      return Rx.Observable.fromEvent(stateInputText, 'keyup')
-              .map(function(ev){
-                  return $(ev.target).val();
-              })
-              .debounce(500)
-              .distinctUntilChanged()
-              .map(function(text){
-                return _searchList(STATES, text);
-              });
-    };
-
-    // Output/Reaction
-    function _stateInputTextObserver(){
-      return Rx.Observer.create(
-        function(data){
-          stateOptions.empty();
-          _.each(data, function(text){
-            $('<option value="' + text + '">').appendTo(stateOptions);
-          });
-        },
-        function(error){
-          $('<option value="' + error + '">').appendTo(stateOptions);
-        },
-        function(){
-          console.log("state input text observed")
-        }
-      )
+    function _getDatasetColumnValues(dataset_id, columnName){
+      var queryObject = new SoQLQuery(dataset_id);
+      var selection = columnName;
+      queryObject.generateQuery({select:selection, group: columnName});
+      //returns promise
+      return queryObject.fetchData();
     }
 
     ////////////////////////////////////////////////////////////////////////////
     // INDUSTRY SELECTION
     ////////////////////////////////////////////////////////////////////////////
 
-
-    function _industryInputTextObservable(){
-      return Rx.Observable.fromEvent(industryInputText, 'keyup')
-              .map( function(ev){
-                  return $(ev.target).val();
-              })
-              .debounce(500)
-              .distinctUntilChanged()
-              .map(function(text){
-                return _searchList(INDUSTRIES, text);
-              });
+    //Query LookUpTable
+    function _lookUpTableObservable(){
+      var lookUpRequestPromise = new SoQLQuery(DATASET_LIBRARY['lookup_table']).fetchData();
+      return Rx.Observable.fromPromise(lookUpRequestPromise);
     }
 
+    //Pull out industry list from the Look Up table and append them to the industry datalist
+    function _renderIndustryOptions(){
+      var industryOptions = _lookUpTableObservable()
+                          .selectMany(function(table){
+                            return Rx.Observable.fromArray(table);
+                          })
+                          .map(function(row){
+                            return row.description
+                          })
+      industryOptions.subscribe(function(industry){
+        $('<option value="' + industry + '">' + industry).appendTo(industryOptions);
+      })
+    }
 
-    // Output/Reaction
-    function _industryInputTextObserver(){
-      return Rx.Observer.create(
-        function(data){
-          industryOptions.empty();
-          _.each(data, function(text){
-            $('<option value="' + text + '">').appendTo(industryOptions);
-          });
-        },
-        function(error){
-          $('<option value="' + error + '">').appendTo(industryOptions);
-        }
-      )
+    function _renderStateOptions(){
+      _.each(STATES, function(state){
+        $('<option value="' + state + '">' + state + '</option>').appendTo(stateOptions);
+      });
     }
 
     /// SUBMIT OBSERVABLE 
@@ -374,7 +342,6 @@ var SoQLQuery = (function(){
       return Rx.Observable.fromEvent(optionsSelectionsForm, 'submit')
               .do(function(ev){
                 ev.preventDefault();
-                selectionMade += 1;
               })
               .map(function(ev){
                 var selection = {state: stateInputText.val(), industry: industryInputText.val()}
@@ -382,12 +349,10 @@ var SoQLQuery = (function(){
               });
     }
     //Sets up Text Input Observable 
-    //Creates subscription 
+    //Creates subscriptions 
     function init(){
-      var stateInputTextObservable = _stateInputTextObservable();
-      var stateSubscription = stateInputTextObservable.subscribe(_stateInputTextObserver()); 
-      var industryInputTextObservable = _industryInputTextObservable();
-      var industrySubscription = industryInputTextObservable.subscribe(_industryInputTextObserver()); 
+      _renderStateOptions();
+      _renderIndustryOptions();
     }
     return {
               init:init,
@@ -397,6 +362,7 @@ var SoQLQuery = (function(){
 
   var App = (function(){
 
+
     //QUERIES
     var lookUpQuery = new SoQLQuery(DATASET_LIBRARY['lookup_table']),
         wagesQuery = new SoQLQuery(DATASET_LIBRARY['wages_by_industry']),
@@ -405,28 +371,28 @@ var SoQLQuery = (function(){
         capitalHighwayQuery,
         highwayMileageQuery;
 
-    //CURRENT SELECTION
-    var state1,
-        state2,
-        industry,
-        occupation; 
-    console.log("Hello from APP");  
-    function submitObserver(){
+    console.log("Hello from APP"); 
+
+    //CREATE DATALISTS WITH STATES, INDUSTRIES, AND OCCUPATIONS 
+    function queryOnSubmitObserver(dataset_id){
+      var query = new SoQLQuery(dataset_id);
       return Rx.Observer.create(
         function(res){
-          var lookUpSource = Rx.Observable.fromPromise(lookUpQuery.fetchData(res.data));
+          var querySource = Rx.Observable.fromPromise(query.fetchData(res.data));
           console.log(lookUpSource);
         },
         function(err){
           console.log(err);
+        },
+        function(){
+          console.log("completed");
         }
       );
     }
 
-
-
     InputComponent.init();
     var submitObservable = InputComponent.submitObservable();
-    var submitSubscription = submitObservable.subscribe(submitObserver());
-    console.log(submitSubscription);
+    submitObservable.publish(function(sharedSubmit){
+      sharedSubmit.subscribe(queryOnSubmitObserver(DATASET_LIBRARY['lookup_table']));
+    })
   })();
