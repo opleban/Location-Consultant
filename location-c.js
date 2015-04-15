@@ -281,34 +281,39 @@ var App = (function(SQ, SQRx){
 
   console.log("Hello from APP");
 
-  function getIndustryClass(description){
+  function getIndustryClass(dataObject){
     return lookUpObservable
-            .do(function(d){console.log(d)})
+            .do(function(){console.log("getIndustryClass()")})
+             //turns array of object result from lookUpTableQuery into stream of objects/rows
             .selectMany(function(row){
               return row
             })
-            .where(function(row){
-              return row.description === description;
+            .find(function(row){
+              return row.description === dataObject.data['industry'];
             })
-            .do(function(d){console.log(d)})
-            .map(function(industry){
-              console.log(industry);
-              return industry.industry_classification;
+            //Side-effect, adds line_code property to dataObject
+            .do(function(row){ dataObject.data['industry_classification'] = row.industry_classification; })
+             //returns dataObject with line_code property
+            .map(function(industry){ 
+              return dataObject 
             });
   }
 
-  function getLineCode(description){
+  function getLineCode(dataObject){
     return lookUpObservable
+            .do(function(){console.log("getLineCode()")})
+            //turns array of object result from lookUpTableQuery into stream of objects/rows
             .selectMany(function(row){
               return row
             })
-            .where(function(row){
-              return row.description === description;
+            .find(function(row){
+              return row.description === dataObject.data['industry'];
             })
-            .do(function(d){console.log(d)})
+            //Side-effect, adds line_code property to dataObject
+            .do(function(row){ dataObject.data['line_code'] = row.line_code; })
+            //returns dataObject with line_code property
             .map(function(industry){
-              console.log(industry);
-              return industry.industry_classification;
+              return dataObject;
             });
   }
 
@@ -317,17 +322,25 @@ var App = (function(SQ, SQRx){
   InputComponent.init();
   var resultQueryObservable = Rx.Observable.empty();
   var submitObservable = InputComponent.submitObservable();
-  var industryClassObservable = submitObservable
-    .select(function(d){return d.data.industry})
-    .flatMapLatest(getIndustryClass)
-    .do(function(d){console.log("industry classification: ", d)})
 
+  //Takes form submission, makes query and return industry classification code
+  var industryClassObservable = submitObservable
+    .flatMapLatest(getIndustryClass)
+    .do(function(d){console.log("industry classification: ", d)});
+
+  //Same as industryClassObservable but returns the line code
   var lineCodeObservable = submitObservable
-    .select(function(d){return d.data.industry})
     .flatMapLatest(getLineCode)
-    .do(function(d){console.log("line code: ", d)})
-  submitObservable.subscribe(function(){
-    
+    .do(function(d){console.log("line code: ", d)});
+
+  // var wagesByIndustryObservable = lineCodeObservable
+  //   .flatMapLatest();
+  industryClassObservable.subscribe(function(d){
+    console.log(d);
+  });
+
+  lineCodeObservable.subscribe(function(d){
+    console.log(d);
   });
 
 })(SoQLQuery, SoQLRxUtil);
