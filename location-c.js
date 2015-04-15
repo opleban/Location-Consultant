@@ -84,6 +84,8 @@ var SoQLQuery = (function(){
   var DEFAULT_YEAR = 2013,
       BASE_URL = '/resource/';
 
+var queryCache = {};
+
   function SoQLQuery(dataset_id){
     console.log(dataset_id);
     if (dataset_id){
@@ -133,13 +135,11 @@ var SoQLQuery = (function(){
   SoQLQuery.prototype.fetchData = function(){
     var that = this;
     queryURL = that.url;
-    if (that.query){
-      queryURL += that.query
-    }
+    if (that.query){ queryURL += that.query }
     return $.ajax({
       url: queryURL,
       dataType: 'json',
-    }).promise();
+    })
   };
 
   //TODO: REFACTOR TO ALLOW GREATER CUSTOMIZATION
@@ -189,10 +189,15 @@ SoQLRxUtil = (function(SQ){
     return queryAsObservable(new SQ(dataset_id));
   }
 
+  function getQueryCache(){
+    return queryCache;
+  }
+
   return {
           queryAsObservable: queryAsObservable,
           columnValuesAsObservable: columnValuesAsObservable,
-          observableFromDatasetId: observableFromDatasetId
+          observableFromDatasetId: observableFromDatasetId,
+          getQueryCache: getQueryCache
         };
 })(SoQLQuery);
 
@@ -279,20 +284,31 @@ var App = (function(SQ, SQRx){
 
   function getIndustryClass(description){
     return lookUpObservable
-            .where(function(data){
+            .do(function(d){console.log(d)})
+            .selectMany(function(row){
+              return row
+            })
+            .where(function(row){
               return row.description === description;
             })
+            .do(function(d){console.log(d)})
             .map(function(industry){
+              console.log(industry);
               return industry.industry_classification;
             });
   }
 
   function getLineCode(description){
-        return lookUpObservable
-            .where(function(data){
+    return lookUpObservable
+            .selectMany(function(row){
+              return row
+            })
+            .where(function(row){
               return row.description === description;
             })
+            .do(function(d){console.log(d)})
             .map(function(industry){
+              console.log(industry);
               return industry.industry_classification;
             });
   }
@@ -302,10 +318,15 @@ var App = (function(SQ, SQRx){
   InputComponent.init();
   var resultQueryObservable = Rx.Observable.empty();
   var submitObservable = InputComponent.submitObservable();
-  var lineCode = submitObservable
-    .map(function(d){return getLineCode(d.data.industry)})
-    .subscribe(function(d){console.log(d)});
-  var industryClass = submitObservable
-    .map(function(d){return getIndustryClass(d.data.industry)})
-    .subscribe(function(d){console.log(d)});
+  var industryClassObservable = submitObservable
+    .select(function(d){return d.data.industry})
+    .flatMapLatest(getIndustryClass)
+    .do(function(d){console.log("industry classification: ", d)})
+
+  var lineCodeObservable = submitObservable
+    .select(function(d){return d.data.industry})
+    .flatMapLatest(getLineCode)
+    .do(function(d){console.log("line code: ", d)})
+
+
 })(SoQLQuery, SoQLRxUtil);
