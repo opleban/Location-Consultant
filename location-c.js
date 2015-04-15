@@ -86,11 +86,14 @@ var SoQLQuery = (function(){
 
 var queryCache = {};
 
-  function SoQLQuery(dataset_id){
+  function SoQLQuery(dataset_id, options){
     if (dataset_id){
       this.url = BASE_URL + dataset_id + '.json?';
     } else {
       throw "No dataset ID provided!";
+    }
+    if (options){
+      this.generateQuery(options);
     }
     //if a query is given, use it otherwise try and generate one
   };
@@ -188,16 +191,23 @@ SoQLRxUtil = (function(SQ){
     return queryAsObservable(new SQ(dataset_id));
   }
 
-  function getQueryCache(){
-    return queryCache;
-  }
+  // function getQueryCache(){
+  //   return queryCache;
+  // }
+
+  // function generateQueryObservable(dataset_id, queryObject, observable){
+  //   var query = new SQ(dataset_id);
+  //   query.genereateQuery(queryObject);
+  //   return queryAsObservable(query);  
+  // }
+
 
   return {
           queryAsObservable: queryAsObservable,
           columnValuesAsObservable: columnValuesAsObservable,
           observableFromDatasetId: observableFromDatasetId,
-          getQueryCache: getQueryCache
         };
+
 })(SoQLQuery);
 
 var InputComponent = (function(SQ, SQRx){
@@ -276,7 +286,6 @@ var comparisonTableComponent = (function(SQ, SQRx){
 var App = (function(SQ, SQRx){
 
   //QUERIES
-
   var lookUpObservable = SQRx.observableFromDatasetId(DATASET_LIB['lookup_table']);
 
   console.log("Hello from APP");
@@ -285,9 +294,8 @@ var App = (function(SQ, SQRx){
     return lookUpObservable
             .do(function(){console.log("getIndustryClass()")})
              //turns array of object result from lookUpTableQuery into stream of objects/rows
-            .selectMany(function(row){
-              return row
-            })
+            .selectMany(function(row){ return row })
+            // find and return the first row with the specified industry/description
             .find(function(row){
               return row.description === dataObject.data['industry'];
             })
@@ -323,18 +331,22 @@ var App = (function(SQ, SQRx){
   var resultQueryObservable = Rx.Observable.empty();
   var submitObservable = InputComponent.submitObservable();
 
-  //Takes form submission, makes query and return industry classification code
+  //Takes form submission, makes query and return a data object containing an
+  // industry classification code
   var industryClassObservable = submitObservable
     .flatMapLatest(getIndustryClass)
     .do(function(d){console.log("industry classification: ", d)});
 
-  //Same as industryClassObservable but returns the line code
+  //Same as industryClassObservable but returns an object with the line code
   var lineCodeObservable = submitObservable
     .flatMapLatest(getLineCode)
     .do(function(d){console.log("line code: ", d)});
 
-  // var wagesByIndustryObservable = lineCodeObservable
-  //   .flatMapLatest();
+
+  var wagesQueryObservable = lineCodeObservable
+    .select(function(d){ return new SQ(d); })
+    .flatMapLatest(SQRx.queryAsObservable)
+
   industryClassObservable.subscribe(function(d){
     console.log(d);
   });
