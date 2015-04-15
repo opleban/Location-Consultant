@@ -87,7 +87,6 @@ var SoQLQuery = (function(){
 var queryCache = {};
 
   function SoQLQuery(dataset_id){
-    console.log(dataset_id);
     if (dataset_id){
       this.url = BASE_URL + dataset_id + '.json?';
     } else {
@@ -327,6 +326,8 @@ var App = (function(SQ, SQRx){
     .select(function(d){return d.data.industry})
     .flatMapLatest(getLineCode)
     .do(function(d){console.log("line code: ", d)})
-
+  submitObservable.subscribe(function(){
+    
+  });
 
 })(SoQLQuery, SoQLRxUtil);
