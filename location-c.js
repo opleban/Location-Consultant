@@ -206,9 +206,11 @@ var InputComponent = (function(SQ, SQRx){
       $stateOneSelect = $('#state-one-input'),
       $stateTwoSelect = $('#state-two-input')
       $industrySelect = $('#industry-input'),
-      selectedIndustryText = $('#industry-input option:selected').text(),
       _submitObservable = _submitClickObservable();
 
+  function selectedIndustryText(){
+    return $('#industry-input option:selected').text(); 
+  }
   function _submitClickObservable(){
     return Rx.Observable.fromEvent($optionsSelectionForm, 'submit');
   }
@@ -230,8 +232,13 @@ var InputComponent = (function(SQ, SQRx){
     return _submitClickObservable()
             .map(function(ev){
               ev.preventDefault();
-              //HACKY, NEED TO REFACTOR TO HAVE THIS LOGIC TAKE PLACE IN SoQLQuery.prototype._generateWhereStatement()
-              return {stateOne: $stateOneSelect.val(), stateTwo: $stateTwoSelect.val(), industryName: selectedIndustryText, industry_classification: $industrySelect.val(), year: DEFAULT_YEAR };
+              return {
+                        stateOne: $stateOneSelect.val(), 
+                        stateTwo: $stateTwoSelect.val(), 
+                        industryName: selectedIndustryText(), 
+                        industry_classification: $industrySelect.val(), 
+                        year: DEFAULT_YEAR 
+                      };
             });
   }
   //Sets up Text Input Observable
@@ -297,81 +304,132 @@ var StateIndustryOccupation = (function(){
   //ASSUMING THAT EACH TABLE HAS A DIFFERENT SCHEMA
   //FUTURE WORK COULD TRY TO MAKE TABLE SCHEMAS SIMILAR
   //COULD GREATLY SIMPLIFY THIS PROCESS
-  StateIndustryOccupation.prototype.setProperty = function(datum){
-    this.datum
+  StateIndustryOccupation.prototype.setProperty = function(propName, propObj){
+    console.log("set property for ", this.state, propName, propObj)
+    this[propName] = propObj;
+    console.log("Set Property Result: ", this)
   };
 
   return StateIndustryOccupation;
 
 })();
 
-var DataStore = (function(StateIndustryOccupation){
-  //READS table_title property and process data accordingly
-  var _states = {};
-  var _propMethods = {
+//ACCEPTS FORM SUBMIT DATA AND OUTPUTS DATA READY TO BE INGESTED 
+//BY DATASTORE FUNCTION
+var DataProcessService = (function(){
+    var _propMethods = {
                       'Compensation by Industry': _processCompensationData,
                       'Wages and Salaries By Industry': _processWagesSalaryData
                     };
 
-  function processFormSubmit(formData){
-    //TODO: ADD OCCUPATION
-    var stateOne = formData['stateOne'];
-    var stateTwo = formData['stateTwo'];
-    stateOneConfig = { 
-                        state: stateOne, 
-                        industryName: formData['industryName'], 
-                        // occupation: formData['occupation'],
-                        year: formData['year'] 
-                      };
-    stateTwoConfig = { 
-                        state: stateTwo, 
-                        industryName: formData['industryName'], 
-                        // occupation: formData['occupation'],
-                        year: formData['year'] 
-                      };
+  //Happens right after initial form submission, creates State objects with options chosen in the form
+  function processFormData(formData){
+      var _propMethods = {
+                      'Compensation by Industry': _processCompensationData,
+                      'Wages and Salaries By Industry': _processWagesSalaryData
+                    };
 
-    _states[stateOne] = new StateIndustryOccupation(stateOneConfig);
-    _states[stateTwo] = new StateIndustryOccupation(stateTwoConfig);
-    console.log("states", _states);
+    if (formData['stateOne'] && formData['stateTwo']){
+      var stateOne = formData['stateOne'];
+      var stateTwo = formData['stateTwo'];
+      stateOneData = { 
+                          state: stateOne, 
+                          industryName: formData['industryName'], 
+                          // occupation: formData['occupation'],
+                          year: formData['year'] 
+                        };
+      stateTwoData = { 
+                          state: stateTwo, 
+                          industryName: formData['industryName'], 
+                          // occupation: formData['occupation'],
+                          year: formData['year'] 
+                        };
+      return [stateOneData, stateTwoData];
+    } else {
+      console.log("DataProcessService.processFormData ", formData);
+      throw "Missing state data from Form Submission";
+    }
   }
 
   function process(stateData){
     console.log("process", stateData);
-    _.each(stateData, function(d){
-      var prop = d.table_title;
-      var state = d.geoname;
-      if (_propMethods[prop]) {
-        var propMethod = _propMethods[prop]
+    var formattedData = _.map(stateData, function(d){
+      var propName = d.table_title;
+      if (_propMethods[propName]) {
+        var propPrepMethod = _propMethods[propName]
       } else{
         throw "No property method found for '" + prop + "'!"
       }
-      propMethod(_states[state], stateData);
+      return propPrepMethod(d); 
     });
+    return formattedData;
   }
 
-
-  function _processCompensationData(stateIndustryOccupationObject, compensationData){
+  function _processCompensationData(compensationData){
     var propObj = {}
     //indicates the unit of measurement
+    propObj.state = compensationData.geoname;
     propObj.unit = "Thousands of Dollars";
     propObj.amount = compensationData['amount_in_thousands_of_dollars'];
     propObj.type = "money";
-    propObj.industry = stateIndustryOccupationObject.setProperty(compensationData);
+    propObj.table_title = compensationData.table_title;
+    return propObj;
   }
 
-  function _processWagesSalaryData(stateIndustryOccupationObject, wagesData){
+  function _processWagesSalaryData(wagesData){
     var propObj = {}
     //indicates the unit of measurement
+    propObj.state = wagesData.geoname;
     propObj.unit = "Thousands of Dollars";
     propObj.amount = wagesData['amount_in_thousands_of_dollars'];
     propObj.type = "money";
-    propObj.industry = stateIndustryOccupationObject.setProperty(wagesData);
+    propObj.table_title = wagesData.table_title;
+    return propObj;
+  }
+
+
+  return {
+          processFormData: processFormData,
+          process: process
+        }
+})();
+
+/* * * * * * * * * * * * * * * * * * * *
+
+DataStore
+Ingests incoming data, keeps internal model of data. 
+
+Emits event when when changes are made to ComponentViews
+All data formatting/preparation takes place in DataProcessService Module
+
+* * * * * * * * * * * * * * * * * * * */
+
+var DataStore = (function(StateIndustryOccupation){
+  var _states = {};
+
+  function ingestFormData(dataArray){
+    _.each(dataArray, function(stateData){
+      var stateName = stateData.state;
+      _states[stateName] = new StateIndustryOccupation(stateData);
+    });
+    console.log('DataStore.intakeFormData: State data intake: ', _states);
+  }
+
+  ///TODO REFACTOR AND PULL OUT TO EXTERNAL SERVICE MODULE
+  function ingestQueryResults(formattedData){
+      _.each(formattedData, function(d){
+        if (_states[d.state]){
+          _states[d.state].setProperty(d.table_title, d);
+        } else {
+          throw "Data returned for unselected state: '" + state + "'!"
+        }
+      });
   }
 
   return {
-    process: process,
-    processFormSubmit: processFormSubmit
-  }
+    ingestFormData: ingestFormData,
+    ingestQueryResults: ingestQueryResults
+  };
 
 })(StateIndustryOccupation);
 
@@ -436,19 +494,20 @@ var MiscService = (function(){
 
 })();
 
-var App = (function(SQ, SQRx, LookUpService, MiscService, InputComponent, DataStore){
+var App = (function(SQ, SQRx, LookUpService, MiscService, DataProcessService, InputComponent, DataStore){
 
   console.log("Hello from APP");
 
-  var formSubmitObservable = InputComponent.formSubmitObservable();
-  var industryOptionsObservable = LookUpService.getIndustryOptions(); 
+  //using share avoids double side effects
+  var formSubmitObservable = InputComponent.formSubmitObservable().share();
+  var industryOptionsObservable = LookUpService.getIndustryOptions();
   
   //CONVOLUTED FUNCTION
   //ESSENTIAL, BUT NEED BETTER FUNCTION NAME INDICATING WHAT HAPPENS HERE
   function generateSourceObservableFromDatasetId(dataset_id, whiteList){
     //creates SoQL Query
     var query = new SQ(dataset_id);
-    return Rx.Observable.from(formSubmitObservable)
+    return formSubmitObservable
             .select(function(d){
               return [
                         {column:'geoname', value: d['stateOne']}, 
@@ -482,24 +541,34 @@ var App = (function(SQ, SQRx, LookUpService, MiscService, InputComponent, DataSt
   ********************************/
 
   InputComponent.init();
-  industryOptionsObservable.subscribe(function(d){
-    InputComponent.renderIndustryOption(d);
-  });
+  industryOptionsObservable.subscribe(
+    function(d){
+      InputComponent.renderIndustryOption(d);
+    },
+    function(err){
+      console.log('Error with Industry Options Observable: ', err);
+    }
+  );
+
   formSubmitObservable.subscribe(
     function(d){
-      DataStore.processFormSubmit(d);
+      var formattedStateData = DataProcessService.processFormData(d);
+      // formattedStateData is an array of states
+      DataStore.ingestFormData(formattedStateData);
+    }, 
+    function(err){
+      console.log('Error with form Submit Observable: ', err);
     }
-  )
+  );
 
   economicDataSource.subscribe(
     function(d){
-      DataStore.process(d);
+      var formattedData = DataProcessService.process(d)     
+      DataStore.ingestQueryResults(formattedData);
     },
     function(err){
       console.log("Error with Economic Data Source: ", err);
     }
   );
 
-
-
-})(SoQLQuery, SoQLRxUtil, LookUpService, MiscService, InputComponent, DataStore);
+})(SoQLQuery, SoQLRxUtil, LookUpService, MiscService, DataProcessService, InputComponent, DataStore);
