@@ -202,17 +202,15 @@ INPUT VIEW COMPONENT
 
 var InputComponent = (function(SQ, SQRx){
 
-  function selectors() {
-    return {
-      $optionsSelectionForm: $('#options-selection-form'),
-      $stateOneSelect: $('#state-one-input'),
-      $stateTwoSelect: $('#state-two-input'),
-      $industrySelect: $('#industry-input'),
-      selectedIndustryText: function(){
-        return $('#industry-input option:selected').text();
-      }
-    };
-  }
+  var selectors = {
+                    $optionsSelectionForm: $('#options-selection-form'),
+                    $stateOneSelect: $('#state-one-input'),
+                    $stateTwoSelect: $('#state-two-input'),
+                    $industrySelect: $('#industry-input'),
+                    selectedIndustryText: function(){
+                      return $('#industry-input option:selected').text();
+                    } 
+                  }
 
   function _renderStateOptions(){
     _.each(STATES, function(state){
@@ -472,16 +470,15 @@ var MiscService = (function(){
 })();
 
 var App = (function(SQ, SQRx, LookUpService, MiscService, DataProcessService, InputComponent, DataStore){
-  var DEFAULT_YEAR = 2013
-  var selectors = InputComponent.selectors();
+  var DEFAULT_YEAR = 2013;
+  var selectors = InputComponent.selectors;
+  debugger;
   console.log("Hello from APP");
 
-  function submitClickObservable(){
-    return Rx.Observable.fromEvent(selectors.$optionsSelectionForm, 'submit');
-  }
+  var submitObservable =  Rx.Observable.fromEvent(selectors.$optionsSelectionForm, 'submit');
 
-  function generateformSubmitObservable(){
-    var formSubmitObservable = submitClickObservable()
+  function generateformSubmitObservable(submitObservable){
+    var formSubmitObservable = submitObservable
       .map(function(ev){
         ev.preventDefault();
         return {
@@ -492,17 +489,16 @@ var App = (function(SQ, SQRx, LookUpService, MiscService, DataProcessService, In
                   year: DEFAULT_YEAR 
                 };
       });
-      debugger;
       //Ensures side effects won't happen multiple times with multiple subscriptions;
       return formSubmitObservable.share();
   }
 
-  var formSubmitObservable = generateformSubmitObservable();
+  var formSubmitObservable = generateformSubmitObservable(submitObservable);
   var industryOptionsObservable = LookUpService.getIndustryOptions();
   
   //CONVOLUTED FUNCTION
   //ESSENTIAL, BUT NEED BETTER FUNCTION NAME INDICATING WHAT HAPPENS HERE
-  function generateSourceObservableFromDatasetId(dataset_id, whiteList){
+  function generateDataSourceObservableFromDatasetId(dataset_id, whiteList){
     var query = new SQ(dataset_id);
     return formSubmitObservable
             .select(function(d){
@@ -523,7 +519,7 @@ var App = (function(SQ, SQRx, LookUpService, MiscService, DataProcessService, In
   }
 
   var whiteList = ['year', 'geoname', 'industry_classification'];
-  var economicDataSource = generateSourceObservableFromDatasetId( DATASET_LIB['economic_data_by_industry'], whiteList);
+  var economicDataSource = generateDataSourceObservableFromDatasetId( DATASET_LIB['economic_data_by_industry'], whiteList);
   // var zippedSource = Rx.Observable.zip(economicDataSource);
   
 
