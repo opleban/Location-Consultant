@@ -21,7 +21,6 @@ Query Industry by state       `
   Query Industry by State
 
 **************************************/
-//Barebones, just enough to get the job done
 var counter = 0;
 var STATES = [
   "Alabama",
@@ -81,9 +80,9 @@ var DATASET_LIB = {
   economic_data_by_industry: "gqnx-8jnj"
 };
 var SoQLQuery = (function(){
+  
   var BASE_URL = '/resource/';
-
-var queryCache = {};
+  var queryCache = {};
 
   function SoQLQuery(dataset_id, options){
     if (dataset_id){
@@ -94,13 +93,11 @@ var queryCache = {};
     if (options){
       this.generateQuery(options);
     }
-    //if a query is given, use it otherwise try and generate one
   };
 
   //ALLOWS YOU TO CONSTRUCT A QUERY
   SoQLQuery.prototype.generateQuery = function(options){
     var query = [];
-    cached_query_store = {};
     if (options.select){
       query.push('$select=' + options.select);
     }
@@ -132,23 +129,34 @@ var queryCache = {};
     return this;
   };
 
-  //Returns promise observable
+  //Returns promise or cached promise
+  //Caching strategy inspired by: http://gosukiwi.svbtle.com/the-right-way-of-caching-ajax-requests-with-jquery
   SoQLQuery.prototype.fetchData = function(){
     var that = this;
-    queryURL = that.url;
-    if (that.query){ queryURL += that.query }
-    return $.ajax({
-      url: queryURL,
-      dataType: 'json',
-    }).promise();
+    var queryURL = that.query ? that.url + that.query : that.url;
+    if (!queryCache[queryURL]){
+      queryCache[queryURL] = $.getJSON(queryURL).promise();
+    }
+    return queryCache[queryURL];
   };
 
   //TODO: REFACTOR TO ALLOW GREATER CUSTOMIZATION
-  function _generateWhereStatement(whereOption){
-    var whereStatement = [];
-    console.log(whereOption);
-    _.map(whereOption, function(value, key){
-      whereStatement.push(key + " = '" + value + "'");
+  function _generateWhereStatement(whereOptionsArray){
+    console.log(whereOptionsArray);
+    var options = {};
+    _.each(whereOptionsArray, function(opt){
+      if (options[opt.column]){
+        options[opt.column].push(opt.value);
+      } else {
+        options[opt.column] = [opt.value];
+      }
+    });
+    var whereStatement = _.map(options, function(value, column){
+      var statement = [];
+      _.each(value, function(item){
+        statement.push(column + " = '" + item + "'");
+      })
+      return statement.join(' OR ');
     });
     return whereStatement.join(" AND ");
   }
@@ -194,57 +202,52 @@ INPUT VIEW COMPONENT
 
 var InputComponent = (function(SQ, SQRx){
   var DEFAULT_YEAR = 2013,
-      optionsSelectionsForm = $('#options-selection-form'),
-      stateOneSelect = $('#state-one-input'),
-      stateTwoSelect = $('#state-two-input')
-      industrySelect = $('#industry-input'),
-      industrySelected = false,
-      occupationSelected = false,
-      selectionMade = 0;
+      $optionsSelectionForm = $('#options-selection-form'),
+      $stateOneSelect = $('#state-one-input'),
+      $stateTwoSelect = $('#state-two-input')
+      $industrySelect = $('#industry-input'),
+      selectedIndustryText = $('#industry-input option:selected').text(),
+      _submitObservable = _submitClickObservable();
 
-  function searchList(list, text){
-    if (text){
-      return _.filter(list, function(item){
-        return !!item.toLowerCase().match(new RegExp("^" + text.toLowerCase()));
-      });
-    }
-  }
-
-  ////////////////////////////////////////////////////////////////////////////
-  // INDUSTRY SELECTION
-  ////////////////////////////////////////////////////////////////////////////
-
-  //Pull out industry list from the Look Up table and append them to the industry datalist
-  function renderIndustryOption(industryObj){
-    $('<option value="' + industryObj.industry_classification + '">' + industryObj.description + '</option>').appendTo(industrySelect);
+  function _submitClickObservable(){
+    return Rx.Observable.fromEvent($optionsSelectionForm, 'submit');
   }
 
   function _renderStateOptions(){
     _.each(STATES, function(state){
-      $('<option value="' + state + '">' + state + '</option>').appendTo(stateOneSelect);
-      $('<option value="' + state + '">' + state + '</option>').appendTo(stateTwoSelect);
+      $('<option value="' + state + '">' + state + '</option>').appendTo($stateOneSelect);
+      $('<option value="' + state + '">' + state + '</option>').appendTo($stateTwoSelect);
     });
+  }
+
+  function renderIndustryOption(industryObj){
+    $('<option value="' + industryObj.industry_classification + '">' + industryObj.description + '</option>').appendTo($industrySelect);
   }
 
   /// SUBMIT OBSERVABLE
   // Input/Action
-  function submitObservable(){
-    return Rx.Observable.fromEvent(optionsSelectionsForm, 'submit')
+  function formSubmitObservable(){
+    return _submitClickObservable()
             .map(function(ev){
               ev.preventDefault();
               //HACKY, NEED TO REFACTOR TO HAVE THIS LOGIC TAKE PLACE IN SoQLQuery.prototype._generateWhereStatement()
-              return { geoname: stateOneSelect.val() + ' OR ' + stateTwoSelect.val(), industry_classification: industrySelect.val(), year: DEFAULT_YEAR, _ev:ev, _type:"form-submit"};
+              return {stateOne: $stateOneSelect.val(), stateTwo: $stateTwoSelect.val(), industryName: selectedIndustryText, industry_classification: $industrySelect.val(), year: DEFAULT_YEAR };
             });
   }
   //Sets up Text Input Observable
   //Creates subscriptions
   function init(){
+    _submitObservable.subscribe(
+      function(ev){
+        ev.preventDefault();
+      }
+    );
     _renderStateOptions();
   }
   return {
             init:init,
             renderIndustryOption: renderIndustryOption,
-            submitObservable: submitObservable
+            formSubmitObservable: formSubmitObservable
           };
 })(SoQLQuery, SoQLRxUtil);
 
@@ -278,55 +281,101 @@ var ComparisonTableComponent = (function(SQ, SQRx){
       }
     );
   }
-  return { observer: resultChangeObserver}
+  return { 
+            observer: resultChangeObserver
+          };
 })(SoQLQuery, SoQLRxUtil);
 
-var ModelStore = (function(){
-  var _states = [];
+var StateIndustryOccupation = (function(){
 
-  function Result(options){
-    this.name = options.name;
-    this.industry_classification
-    this.line_code
-    this.compensation
-    this.wages_and_salaries
-    this.education_attainment
-    this.employment
-    this.wages
-    this.raw_materials
-    this.intermediate_materials
-    this.final_materials
-    this.natural_gas_prices
-    this.electricity_prices
-    this.oil_prices
-    this.capital_outlay_for_highways
-    this.highway_mileage
+  function StateIndustryOccupation(options){
+    this.state = options.state;
+    this.industry = options.industryName;
+    //this.occupation = options.occupation;
+  };
+
+  //ASSUMING THAT EACH TABLE HAS A DIFFERENT SCHEMA
+  //FUTURE WORK COULD TRY TO MAKE TABLE SCHEMAS SIMILAR
+  //COULD GREATLY SIMPLIFY THIS PROCESS
+  StateIndustryOccupation.prototype.setProperty = function(datum){
+    this.datum
+  };
+
+  return StateIndustryOccupation;
+
+})();
+
+var DataStore = (function(StateIndustryOccupation){
+  //READS table_title property and process data accordingly
+  var _states = {};
+  var _propMethods = {
+                      'Compensation by Industry': _processCompensationData,
+                      'Wages and Salaries By Industry': _processWagesSalaryData
+                    };
+
+  function processFormSubmit(formData){
+    //TODO: ADD OCCUPATION
+    var stateOne = formData['stateOne'];
+    var stateTwo = formData['stateTwo'];
+    stateOneConfig = { 
+                        state: stateOne, 
+                        industryName: formData['industryName'], 
+                        // occupation: formData['occupation'],
+                        year: formData['year'] 
+                      };
+    stateTwoConfig = { 
+                        state: stateTwo, 
+                        industryName: formData['industryName'], 
+                        // occupation: formData['occupation'],
+                        year: formData['year'] 
+                      };
+
+    _states[stateOne] = new StateIndustryOccupation(stateOneConfig);
+    _states[stateTwo] = new StateIndustryOccupation(stateTwoConfig);
+    console.log("states", _states);
   }
 
-  Result.prototype.setProperty = function(stat){};
+  function process(stateData){
+    console.log("process", stateData);
+    _.each(stateData, function(d){
+      var prop = d.table_title;
+      var state = d.geoname;
+      if (_propMethods[prop]) {
+        var propMethod = _propMethods[prop]
+      } else{
+        throw "No property method found for '" + prop + "'!"
+      }
+      propMethod(_states[state], stateData);
+    });
+  }
 
-})()
 
-var MiscService = (function(){
-  
-  function filterObjectByProp(obj, whiteList){
-    console.log(obj);
-    var filteredObj = {};
-    if (whiteList){
-      _.each(obj, function(value, key){
-        if (_.include(whiteList, key)){
-          filteredObj[key] = value;
-        }
-      })
-    }
-    return filteredObj;
+  function _processCompensationData(stateIndustryOccupationObject, compensationData){
+    var propObj = {}
+    //indicates the unit of measurement
+    propObj.unit = "Thousands of Dollars";
+    propObj.amount = compensationData['amount_in_thousands_of_dollars'];
+    propObj.type = "money";
+    propObj.industry = stateIndustryOccupationObject.setProperty(compensationData);
+  }
+
+  function _processWagesSalaryData(stateIndustryOccupationObject, wagesData){
+    var propObj = {}
+    //indicates the unit of measurement
+    propObj.unit = "Thousands of Dollars";
+    propObj.amount = wagesData['amount_in_thousands_of_dollars'];
+    propObj.type = "money";
+    propObj.industry = stateIndustryOccupationObject.setProperty(wagesData);
   }
 
   return {
-    filterObjectByProp: filterObjectByProp
-  };
+    process: process,
+    processFormSubmit: processFormSubmit
+  }
 
-})();
+})(StateIndustryOccupation);
+
+
 var LookUpService = (function(SQ, SQRx){
   var _lookUpObservable = SQRx.observableFromDatasetId(DATASET_LIB['lookup_table']);
 
@@ -335,7 +384,7 @@ var LookUpService = (function(SQ, SQRx){
             .do(function(){ console.log("get industry options"); })
             .selectMany(function(row){ return row; })
             .map(function(row){ 
-              return { description:row.description, industry_classification:row.industry_classification, line_code:row.line_code }; 
+              return {description:row.description, industry_classification:row.industry_classification, line_code:row.line_code }; 
             });
   }
 
@@ -346,68 +395,81 @@ var LookUpService = (function(SQ, SQRx){
 })(SoQLQuery, SoQLRxUtil);
 
 
+var MiscService = (function(){
 
-var App = (function(SQ, SQRx, LookUpService, MiscService){
+  function searchList(list, text){
+    if (text){
+      return _.filter(list, function(item){
+        return !!item.toLowerCase().match(new RegExp("^" + text.toLowerCase()));
+      });
+    }
+  }
+  
+  function filterOptionsArray(optionsArray, whiteList){
+    var filteredOptions = [];
+    if (whiteList){
+      _.each(optionsArray, function(obj){
+        if (_.include(whiteList, obj['column'])){
+          filteredOptions.push(obj);
+        }
+      });
+    }
+    return filteredOptions;
+  }
+
+  function filterSourceOnState(observable, state){
+    var obs = observable;
+    if (state){
+      obs.selectMany(function(d){
+        return d
+      })
+        .where(function(d){ 
+          return d.geoname === state; 
+        });
+    }
+  }
+
+  return {
+    filterOptionsArray: filterOptionsArray,
+    searchList: searchList
+  };
+
+})();
+
+var App = (function(SQ, SQRx, LookUpService, MiscService, InputComponent, DataStore){
 
   console.log("Hello from APP");
-  // Observable with industry options
 
-  //LOAD STATE/INDUSTRY FORM
-  /********************************
-
-  DATASET QUERIES
-
-  ********************************/
-  var submitObservable = InputComponent.submitObservable();
-
-  var industryOptionsObservable = LookUpService.getIndustryOptions();
-
-  // // gets industry classification code from form submission
-  // var industryClassObservable = submitObservable
-  //   .flatMapLatest(LookUpService.addIndustryClass)
-  //   .do(function(d){console.log("industry classification: ", d) });
-
-  // //gets line code from form submission
-  // var lineCodeObservable = submitObservable
-  //   .flatMapLatest(LookUpService.addLineCode)
-  //   .do(function(d){console.log("line code: ", d) });
+  var formSubmitObservable = InputComponent.formSubmitObservable();
+  var industryOptionsObservable = LookUpService.getIndustryOptions(); 
   
-  //ATTEMPT TO DRY UP CODE
   //CONVOLUTED FUNCTION
+  //ESSENTIAL, BUT NEED BETTER FUNCTION NAME INDICATING WHAT HAPPENS HERE
   function generateSourceObservableFromDatasetId(dataset_id, whiteList){
     //creates SoQL Query
     var query = new SQ(dataset_id);
-    return submitObservable
+    return Rx.Observable.from(formSubmitObservable)
+            .select(function(d){
+              return [
+                        {column:'geoname', value: d['stateOne']}, 
+                        {column:'geoname', value: d['stateTwo']}, 
+                        {column: 'industry_classification', value: d['industry_classification']},
+                        // {column: 'occupation', value: d['occupation']}, 
+                        {column:'year', value:d['year']}
+                      ];
+            })
             .select(function(d){ 
-              var whereStatement = MiscService.filterObjectByProp(d, whiteList)
+              var whereStatement = MiscService.filterOptionsArray(d, whiteList);
               return query.generateQuery({ where:whereStatement }); 
             })
+            .do(function(d){ console.log(d); })
             .flatMapLatest(SQRx.queryAsObservable);
   }
 
   var whiteList = ['year', 'geoname', 'industry_classification'];
   var economicDataSource = generateSourceObservableFromDatasetId( DATASET_LIB['economic_data_by_industry'], whiteList);
-
-  var wagesSource = economicDataSource;
-
-  var compensationSource = economicDataSource;
-
-  // var wagesQuery = new SQ(DATASET_LIB['wages_by_industry'])
-  // var wagesSource = lineCodeObservable
-  //   .select(function(d){
-  //     return MiscService.filterObjectByProp(d, ['year','state', 'line_code']);
-  //   })
-  //   .select(function(d){ return wagesQuery.generateQuery({where:d}); })
-  //   .flatMapLatest(SQRx.queryAsObservable);
-
-  // var compensationQuery = new SQ(DATASET_LIB(['compensation_by_industry']);
-  // var compensationSource = lineCodeObservable
-  //   .select(function(d){
-  //     return MiscService.filterObjectByProp(d, ['year','state', 'line_code']);
-  //   })
-  //   .select(function(d){ return wagesQuery.generateQuery({where: d}); })
-  //   flatMapLatest(SQRx.queryAsObservable);
-
+  // var zippedSource = Rx.Observable.zip(economicDataSource);
+  
 
   // var zippedQueriesSources = Rx.Observable.zip(wagesSource, compensationSource, function(wages, compensation){
   //   return {wages: wages, compensation: compensation}
@@ -419,20 +481,25 @@ var App = (function(SQ, SQRx, LookUpService, MiscService){
 
   ********************************/
 
-
   InputComponent.init();
   industryOptionsObservable.subscribe(function(d){
     InputComponent.renderIndustryOption(d);
   });
+  formSubmitObservable.subscribe(
+    function(d){
+      DataStore.processFormSubmit(d);
+    }
+  )
 
   economicDataSource.subscribe(
     function(d){
-      console.log(d);
+      DataStore.process(d);
     },
     function(err){
-      console.log(err);
+      console.log("Error with Economic Data Source: ", err);
     }
   );
 
 
-})(SoQLQuery, SoQLRxUtil, LookUpService, MiscService);
+
+})(SoQLQuery, SoQLRxUtil, LookUpService, MiscService, InputComponent, DataStore);
