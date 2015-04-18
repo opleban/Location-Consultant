@@ -201,60 +201,37 @@ INPUT VIEW COMPONENT
 * * * * * * * * * * * * * * * * */
 
 var InputComponent = (function(SQ, SQRx){
-  var DEFAULT_YEAR = 2013,
-      $optionsSelectionForm = $('#options-selection-form'),
-      $stateOneSelect = $('#state-one-input'),
-      $stateTwoSelect = $('#state-two-input')
-      $industrySelect = $('#industry-input'),
-      _submitObservable = _submitClickObservable();
 
-  function selectedIndustryText(){
-    return $('#industry-input option:selected').text(); 
-  }
-  function _submitClickObservable(){
-    return Rx.Observable.fromEvent($optionsSelectionForm, 'submit');
+  function selectors() {
+    return {
+      $optionsSelectionForm: $('#options-selection-form'),
+      $stateOneSelect: $('#state-one-input'),
+      $stateTwoSelect: $('#state-two-input'),
+      $industrySelect: $('#industry-input'),
+      selectedIndustryText: function(){
+        return $('#industry-input option:selected').text();
+      }
+    };
   }
 
   function _renderStateOptions(){
     _.each(STATES, function(state){
-      $('<option value="' + state + '">' + state + '</option>').appendTo($stateOneSelect);
-      $('<option value="' + state + '">' + state + '</option>').appendTo($stateTwoSelect);
+      $('<option value="' + state + '">' + state + '</option>').appendTo(selectors.$stateOneSelect);
+      $('<option value="' + state + '">' + state + '</option>').appendTo(selectors.$stateTwoSelect);
     });
   }
 
   function renderIndustryOption(industryObj){
-    $('<option value="' + industryObj.industry_classification + '">' + industryObj.description + '</option>').appendTo($industrySelect);
+    $('<option value="' + industryObj.industry_classification + '">' + industryObj.description + '</option>').appendTo(selectors.$industrySelect);
   }
 
-  /// SUBMIT OBSERVABLE
-  // Input/Action
-  function formSubmitObservable(){
-    return _submitClickObservable()
-            .map(function(ev){
-              ev.preventDefault();
-              return {
-                        stateOne: $stateOneSelect.val(), 
-                        stateTwo: $stateTwoSelect.val(), 
-                        industryName: selectedIndustryText(), 
-                        industry_classification: $industrySelect.val(), 
-                        year: DEFAULT_YEAR 
-                      };
-            });
-  }
-  //Sets up Text Input Observable
-  //Creates subscriptions
   function init(){
-    _submitObservable.subscribe(
-      function(ev){
-        ev.preventDefault();
-      }
-    );
     _renderStateOptions();
   }
   return {
             init:init,
             renderIndustryOption: renderIndustryOption,
-            formSubmitObservable: formSubmitObservable
+            selectors: selectors
           };
 })(SoQLQuery, SoQLRxUtil);
 
@@ -495,17 +472,37 @@ var MiscService = (function(){
 })();
 
 var App = (function(SQ, SQRx, LookUpService, MiscService, DataProcessService, InputComponent, DataStore){
-
+  var DEFAULT_YEAR = 2013
+  var selectors = InputComponent.selectors();
   console.log("Hello from APP");
 
-  //using share avoids double side effects
-  var formSubmitObservable = InputComponent.formSubmitObservable().share();
+  function submitClickObservable(){
+    return Rx.Observable.fromEvent(selectors.$optionsSelectionForm, 'submit');
+  }
+
+  function generateformSubmitObservable(){
+    var formSubmitObservable = submitClickObservable()
+      .map(function(ev){
+        ev.preventDefault();
+        return {
+                  stateOne: selectors.$stateOneSelect.val(), 
+                  stateTwo: selectors.$stateTwoSelect.val(), 
+                  industryName: selectors.selectedIndustryText(), 
+                  industry_classification: selectors.$industrySelect.val(), 
+                  year: DEFAULT_YEAR 
+                };
+      });
+      debugger;
+      //Ensures side effects won't happen multiple times with multiple subscriptions;
+      return formSubmitObservable.share();
+  }
+
+  var formSubmitObservable = generateformSubmitObservable();
   var industryOptionsObservable = LookUpService.getIndustryOptions();
   
   //CONVOLUTED FUNCTION
   //ESSENTIAL, BUT NEED BETTER FUNCTION NAME INDICATING WHAT HAPPENS HERE
   function generateSourceObservableFromDatasetId(dataset_id, whiteList){
-    //creates SoQL Query
     var query = new SQ(dataset_id);
     return formSubmitObservable
             .select(function(d){
@@ -541,6 +538,13 @@ var App = (function(SQ, SQRx, LookUpService, MiscService, DataProcessService, In
   ********************************/
 
   InputComponent.init();
+
+  submitObservable.subscribe(
+    function(ev){
+      ev.preventDefault();
+    }
+  );
+
   industryOptionsObservable.subscribe(
     function(d){
       InputComponent.renderIndustryOption(d);
